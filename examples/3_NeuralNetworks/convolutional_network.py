@@ -10,6 +10,7 @@ Project: https://github.com/aymericdamien/TensorFlow-Examples/
 from __future__ import print_function
 
 import tensorflow as tf
+import numpy as np
 
 # Import MNIST data
 from tensorflow.examples.tutorials.mnist import input_data
@@ -21,23 +22,36 @@ training_iters = 200000
 batch_size = 128
 display_step = 10
 
+def bent_identity(x):
+    """ Computes the bent identity activation function """
+    
+    tensor_shape = x.shape
+
+    input_squared = tf.pow(x,2)
+    input_added = tf.add(input_squared, tf.constant(1.0, dtype=tf.float32))
+    input_sqrted = tf.sqrt(input_added)
+    input_subtracted = tf.subtract(input_sqrted, tf.constant(1.0, dtype=tf.float32))
+    input_dived = tf.realdiv(input_subtracted, tf.constant(2.0, dtype=tf.float32))
+    return tf.add(input_dived, x)
+
 # Network Parameters
 n_input = 784 # MNIST data input (img shape: 28*28)
 n_classes = 10 # MNIST total classes (0-9 digits)
 dropout = 0.75 # Dropout, probability to keep units
+activation_function = bent_identity # Activation function to use
 
 # tf Graph input
 x = tf.placeholder(tf.float32, [None, n_input])
 y = tf.placeholder(tf.float32, [None, n_classes])
 keep_prob = tf.placeholder(tf.float32) #dropout (keep probability)
 
-
 # Create some wrappers for simplicity
 def conv2d(x, W, b, strides=1):
     # Conv2D wrapper, with bias and relu activation
     x = tf.nn.conv2d(x, W, strides=[1, strides, strides, 1], padding='SAME')
     x = tf.nn.bias_add(x, b)
-    return tf.nn.relu(x)
+
+    return activation_function(x)
 
 
 def maxpool2d(x, k=2):
@@ -65,7 +79,7 @@ def conv_net(x, weights, biases, dropout):
     # Reshape conv2 output to fit fully connected layer input
     fc1 = tf.reshape(conv2, [-1, weights['wd1'].get_shape().as_list()[0]])
     fc1 = tf.add(tf.matmul(fc1, weights['wd1']), biases['bd1'])
-    fc1 = tf.nn.relu(fc1)
+    fc1 = activation_function(fc1)
     # Apply Dropout
     fc1 = tf.nn.dropout(fc1, dropout)
 
@@ -106,9 +120,27 @@ accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 # Initializing the variables
 init = tf.global_variables_initializer()
 
+def cpu_bent_identity(arr):
+    """ Implementing the bent identity in numpy so we can check that our tensorflow
+    implementation is sound """
+    return arr+(np.sqrt(np.power(arr, 2)+1)-1)/2
+
+assert cpu_bent_identity([0]) == [0.]
+assert cpu_bent_identity([3]) - 4.08113883 < 0.0001
+
+test_input = np.array([3.0, 6.0, -3.0, 0.0, 10.5])
+tf_test_input = tf.constant(test_input, dtype=tf.float32)
+expected_output = cpu_bent_identity(test_input)
+print("Input vector: %s\nOutput after bent identity: %s"%(test_input, expected_output))
+
 # Launch the graph
 with tf.Session() as sess:
     sess.run(init)
+
+    # First, let's check that the bent identity tf implementation gives a similar results to the np one
+    tf_bent_output = sess.run(bent_identity(tf_test_input))
+    print("Difference between tf and np bent is: %s"%(tf_bent_output-expected_output))
+    
     step = 1
     # Keep training until reach max iterations
     while step * batch_size < training_iters:
